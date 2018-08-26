@@ -1,7 +1,11 @@
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
 import org.eclipse.jetty.websocket.client.ClientUpgradeRequest;
@@ -11,12 +15,14 @@ import org.json.JSONObject;
 final public class ChatWebSocketHandler {
 	private Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
 	private int nextUserNumber = 1; // Assign to user name for next connecting user
-    private static ClientUpgradeRequest request = new ClientUpgradeRequest();
-    
+	private static ClientUpgradeRequest request = new ClientUpgradeRequest();
+
 	@OnWebSocketConnect
 	public void onConnect(Session user) throws Exception {
 		request.getHeader("username");
 		String username = "User" + nextUserNumber++;
+		final InetSocketAddress remoteAddr = user.getRemoteAddress();
+		System.out.println(remoteAddr);
 		userUsernameMap.put(user, username);
 		broadcastMessage("Server", (username + " joined the chat"));
 	}
@@ -33,6 +39,11 @@ final public class ChatWebSocketHandler {
 		broadcastMessage(userUsernameMap.get(user), message);
 	}
 
+	@OnWebSocketMessage
+	public void methodName(Session user, byte[] buf, int offset, int length) {
+		broadcastBytes(userUsernameMap.get(user), buf);
+	}
+
 	// Sends a message from one user to all users, along with a list of current
 	// user names
 	private void broadcastMessage(String sender, String message) {
@@ -43,6 +54,20 @@ final public class ChatWebSocketHandler {
 								.put("timestamp", new SimpleDateFormat("HH:mm:ss").format(new Date()))
 								.put("message", message).put("userlist", userUsernameMap.values())));
 			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		});
+	}
+
+	private void broadcastBytes(String sender, byte[] b) {
+		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
+			ByteBuffer buf = ByteBuffer.wrap(b);
+			try {
+				Future<Void> fut = session.getRemote().sendBytesByFuture(buf);
+				// wait for completion (forever)
+				fut.get();
+			} catch (ExecutionException | InterruptedException e) {
+				// Send failed
 				e.printStackTrace();
 			}
 		});
