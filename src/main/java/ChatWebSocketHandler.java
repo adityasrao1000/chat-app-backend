@@ -8,18 +8,15 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
-import org.eclipse.jetty.websocket.client.ClientUpgradeRequest;
 import org.json.JSONObject;
 
-@WebSocket
+@WebSocket(maxTextMessageSize = 1048576, maxBinaryMessageSize = 10485760)
 final public class ChatWebSocketHandler {
 	private Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
 	private int nextUserNumber = 1; // Assign to user name for next connecting user
-	private static ClientUpgradeRequest request = new ClientUpgradeRequest();
 
 	@OnWebSocketConnect
 	public void onConnect(Session user) throws Exception {
-		request.getHeader("username");
 		String username = "User" + nextUserNumber++;
 		final InetSocketAddress remoteAddr = user.getRemoteAddress();
 		System.out.println(remoteAddr);
@@ -51,6 +48,7 @@ final public class ChatWebSocketHandler {
 			try {
 				session.getRemote()
 						.sendString(String.valueOf(new JSONObject().put("sender", sender)
+								.put("type", "text")
 								.put("timestamp", new SimpleDateFormat("HH:mm:ss").format(new Date()))
 								.put("message", message).put("userlist", userUsernameMap.values())));
 			} catch (Exception e) {
