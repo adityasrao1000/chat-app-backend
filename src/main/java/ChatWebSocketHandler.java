@@ -1,7 +1,6 @@
 import java.io.IOException;
-import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -62,7 +61,7 @@ final public class ChatWebSocketHandler {
 			try {
 				session.getRemote()
 						.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", "text")
-								.put("timestamp", new SimpleDateFormat("HH:mm:ss").format(new Date()))
+								.put("timestamp", LocalDateTime.now())
 								.put("message", message).put("userlist", userUsernameMap.values())));
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -72,30 +71,29 @@ final public class ChatWebSocketHandler {
 
 	private void broadcastBytes(String sender, byte[] b) {
 		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
-			
+
 			try {
 				String s = Base64.getEncoder().encodeToString(b);
 				session.getRemote()
-				.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", "image")
-						.put("timestamp", new SimpleDateFormat("HH:mm:ss").format(new Date()))
-						.put("message", s).put("userlist", userUsernameMap.values())));
-			} catch ( IOException e) {
+						.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", "image")
+								.put("timestamp", LocalDateTime.now()).put("message", s)
+								.put("userlist", userUsernameMap.values())));
+			} catch (IOException e) {
 				// Send failed
 				e.printStackTrace();
 			}
 		});
 	}
-	
-	protected String getSaltString(int length) {
-        String SALTCHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
-        StringBuilder salt = new StringBuilder();
-        Random rnd = new Random();
-        while (salt.length() < length) { // length of the random string.
-            int index = (int) (rnd.nextFloat() * SALTCHARS.length());
-            salt.append(SALTCHARS.charAt(index));
-        }
-        String saltStr = salt.toString();
-        return saltStr;
 
-    }
+	protected String getSaltString(int length) {
+		String SALTCHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+		StringBuilder salt = new StringBuilder();
+		Random rnd = new Random();
+		while (salt.length() < length) { // length of the random string.
+			int index = (int) (rnd.nextFloat() * SALTCHARS.length());
+			salt.append(SALTCHARS.charAt(index));
+		}
+		String saltStr = salt.toString();
+		return saltStr;
+	}
 }
