@@ -4,13 +4,13 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Map;
-import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
 import org.json.JSONObject;
+import com.google.gson.Gson;
 
-@WebSocket(maxTextMessageSize = 1048576, maxBinaryMessageSize = 15728640)
+@WebSocket(maxTextMessageSize = 15728640, maxBinaryMessageSize = 15728640)
 final public class ChatWebSocketHandler {
 	// this map is shared between sessions and threads, so it needs to be
 	// thread-safe (http://stackoverflow.com/a/2688817)
@@ -25,7 +25,7 @@ final public class ChatWebSocketHandler {
 			} else {
 				user.setIdleTimeout(0);
 				userUsernameMap.put(user, name);
-				broadcastMessage("Server", (name + " joined the chat"));
+				broadcastMessage("Server", (name + " joined the chat"), "text");
 			}
 		}
 	}
@@ -35,7 +35,7 @@ final public class ChatWebSocketHandler {
 		String username = userUsernameMap.get(user);
 		if (username != null) {
 			userUsernameMap.remove(user);
-			broadcastMessage("Server", (username + " left the chat"));
+			broadcastMessage("Server", (username + " left the chat"), "text");
 		}
 	}
 
@@ -46,8 +46,15 @@ final public class ChatWebSocketHandler {
 
 	@OnWebSocketMessage
 	public void onMessage(Session user, String message) {
+		Gson gson = Singleton.gson();
 		if (userUsernameMap.containsKey(user)) {
-			broadcastMessage(userUsernameMap.get(user), message);
+			try {
+				BinaryMessage type = gson.fromJson(message, BinaryMessage.class);
+				System.out.println(type.getType());
+				broadcastMessage(userUsernameMap.get(user), type.getFile(), type.getType());
+			} catch (Exception e) {
+				broadcastMessage(userUsernameMap.get(user), message, "text");
+			}
 		}
 	}
 
@@ -60,11 +67,11 @@ final public class ChatWebSocketHandler {
 
 	// Sends a message from one user to all users, along with a list of current
 	// user names
-	private void broadcastMessage(String sender, String message) {
+	private void broadcastMessage(String sender, String message, String type) {
 		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
 			try {
 				session.getRemote()
-						.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", "text")
+						.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", type)
 								.put("timestamp", LocalDateTime.now()).put("message", message)
 								.put("userlist", userUsernameMap.values())));
 			} catch (Exception e) {
@@ -87,17 +94,5 @@ final public class ChatWebSocketHandler {
 				e.printStackTrace();
 			}
 		});
-	}
-
-	protected String getSaltString(int length) {
-		String SALTCHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
-		StringBuilder salt = new StringBuilder();
-		Random rnd = new Random();
-		while (salt.length() < length) { // length of the random string.
-			int index = (int) (rnd.nextFloat() * SALTCHARS.length());
-			salt.append(SALTCHARS.charAt(index));
-		}
-		String saltStr = salt.toString();
-		return saltStr;
 	}
 }
