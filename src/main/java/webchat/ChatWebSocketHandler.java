@@ -1,7 +1,8 @@
+package webchat;
+
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
@@ -9,19 +10,22 @@ import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
 import org.json.JSONObject;
 
-@WebSocket(maxTextMessageSize = 1048576, maxBinaryMessageSize = 10485760)
+@WebSocket(maxTextMessageSize = 1048576, maxBinaryMessageSize = 15728640)
 final public class ChatWebSocketHandler {
+	// this map is shared between sessions and threads, so it needs to be
+	// thread-safe (http://stackoverflow.com/a/2688817)
 	private Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
 
 	@OnWebSocketConnect
 	public void onConnect(Session user) throws Exception {
-		List<String> name = user.getUpgradeRequest().getParameterMap().get("name");
-		if (name.get(0) != null) {
-			if (userUsernameMap.containsValue(name.get(0))) {
+		String name = user.getUpgradeRequest().getParameterMap().get("name").get(0);
+		if (name != null) {
+			if (userUsernameMap.containsValue(name)) {
 				user.close();
 			} else {
-				userUsernameMap.put(user, name.get(0));
-				broadcastMessage("Server", (name.get(0) + " joined the chat"));
+				user.setIdleTimeout(0);
+				userUsernameMap.put(user, name);
+				broadcastMessage("Server", (name + " joined the chat"));
 			}
 		}
 	}
@@ -61,8 +65,8 @@ final public class ChatWebSocketHandler {
 			try {
 				session.getRemote()
 						.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", "text")
-								.put("timestamp", LocalDateTime.now())
-								.put("message", message).put("userlist", userUsernameMap.values())));
+								.put("timestamp", LocalDateTime.now()).put("message", message)
+								.put("userlist", userUsernameMap.values())));
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
