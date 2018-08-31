@@ -1,5 +1,10 @@
 package webchat;
 
+/**
+ * 
+ * @author Aditya
+ * @since 24/8/18
+ */
 public class BinaryMessage {
 	private String type;
 	private String file;

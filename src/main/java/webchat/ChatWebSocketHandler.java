@@ -8,6 +8,11 @@ import org.eclipse.jetty.websocket.api.annotations.*;
 import org.json.JSONObject;
 import com.google.gson.Gson;
 
+/**
+ * 
+ * @author Aditya
+ * @since 24/8/18
+ */
 @WebSocket(maxTextMessageSize = 15728640)
 final public class ChatWebSocketHandler {
 	// this map is shared between sessions and threads, so it needs to be
@@ -33,6 +38,14 @@ final public class ChatWebSocketHandler {
 		}
 	}
 
+	/**
+	 * If a user closes his connection to the socket the user is removed from the
+	 * session map
+	 * 
+	 * @param user
+	 * @param statusCode
+	 * @param reason
+	 */
 	@OnWebSocketClose
 	public void onClose(Session user, int statusCode, String reason) {
 		String username = userUsernameMap.get(user);
@@ -42,11 +55,20 @@ final public class ChatWebSocketHandler {
 		}
 	}
 
+	/**
+	 * 
+	 * @param error
+	 */
 	@OnWebSocketError
 	public void onError(Throwable error) {
 		error.printStackTrace();
 	}
 
+	/**
+	 * 
+	 * @param user
+	 * @param message
+	 */
 	@OnWebSocketMessage
 	public void onMessage(Session user, String message) {
 		Gson gson = Singleton.gson();
@@ -61,8 +83,13 @@ final public class ChatWebSocketHandler {
 		}
 	}
 
-
-	// Sends a message from one user to all users, along with a list of current
+	/**
+	 * Sends a message from one user to all users, along with a list of current
+	 * 
+	 * @param sender
+	 * @param message
+	 * @param type
+	 */
 	private void broadcastMessage(String sender, String message, String type) {
 		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
 			try {
