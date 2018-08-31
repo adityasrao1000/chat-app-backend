@@ -92,14 +92,16 @@ final public class ChatWebSocketHandler {
 	 */
 	private void broadcastMessage(String sender, String message, String type) {
 		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
-			try {
-				session.getRemote()
-						.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", type)
-								.put("timestamp", LocalDateTime.now()).put("message", message)
-								.put("userlist", userUsernameMap.values())));
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
+			new Thread(() -> {
+				try {
+					session.getRemote()
+							.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", type)
+									.put("timestamp", LocalDateTime.now()).put("message", message)
+									.put("userlist", userUsernameMap.values())));
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}).start();
 		});
 	}
 
