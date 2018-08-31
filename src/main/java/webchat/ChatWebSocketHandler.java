@@ -1,6 +1,7 @@
 package webchat;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.eclipse.jetty.websocket.api.*;
@@ -17,7 +18,8 @@ import com.google.gson.Gson;
 final public class ChatWebSocketHandler {
 	// this map is shared between sessions and threads, so it needs to be
 	// thread-safe
-	private Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
+	private final Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
+	private Map<Session, String> sessions = null;
 
 	/**
 	 * 
@@ -32,6 +34,7 @@ final public class ChatWebSocketHandler {
 			} else {
 				user.setIdleTimeout(0);
 				userUsernameMap.put(user, name);
+				sessions = new HashMap<Session, String>(userUsernameMap);
 				broadcastMessage("Server", (name + " joined the chat"), "text");
 			}
 		}
@@ -50,6 +53,7 @@ final public class ChatWebSocketHandler {
 		String username = userUsernameMap.get(user);
 		if (username != null) {
 			userUsernameMap.remove(user);
+			sessions = new HashMap<Session, String>(userUsernameMap);
 			broadcastMessage("Server", (username + " left the chat"), "text");
 		}
 	}
@@ -91,13 +95,14 @@ final public class ChatWebSocketHandler {
 	 * @param type
 	 */
 	private void broadcastMessage(String sender, String message, String type) {
+		
 		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
 			new Thread(() -> {
 				try {
 					session.getRemote()
 							.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", type)
 									.put("timestamp", LocalDateTime.now()).put("message", message)
-									.put("userlist", userUsernameMap.values())));
+									.put("userlist", sessions.values())));
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
