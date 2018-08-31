@@ -16,16 +16,15 @@ import com.google.gson.Gson;
 @WebSocket(maxTextMessageSize = 15728640)
 final public class ChatWebSocketHandler {
 	// this map is shared between sessions and threads, so it needs to be
-	// thread-safe (http://stackoverflow.com/a/2688817)
+	// thread-safe
 	private Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
 
 	/**
 	 * 
 	 * @param user
-	 * @throws Exception
 	 */
 	@OnWebSocketConnect
-	public void onConnect(Session user) throws Exception {
+	public void onConnect(Session user) {
 		String name = user.getUpgradeRequest().getParameterMap().get("name").get(0);
 		if (name != null) {
 			if (userUsernameMap.containsValue(name)) {
@@ -56,6 +55,7 @@ final public class ChatWebSocketHandler {
 	}
 
 	/**
+	 * prints the stack trace in case of error
 	 * 
 	 * @param error
 	 */

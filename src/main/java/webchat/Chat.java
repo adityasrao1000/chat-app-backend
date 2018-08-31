@@ -1,13 +1,13 @@
 package webchat;
 
+import static spark.Spark.webSocket;
+import static spark.Spark.init;
+
 /**
  * 
  * @author Aditya
  * @since 24/8/18
  */
-import static spark.Spark.webSocket;
-import static spark.Spark.init;
-
 final public class Chat {
 
 	public static void main(String[] args) {
