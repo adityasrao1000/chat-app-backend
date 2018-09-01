@@ -2,8 +2,12 @@ package webchat;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
 import org.json.JSONObject;
@@ -20,6 +24,10 @@ final public class ChatWebSocketHandler {
 	// thread-safe
 	private final Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
 	private Map<Session, String> sessions = null;
+	Queue<PendingMessages> queue = new LinkedList<PendingMessages>();
+	private final Executor executor = Executors.newCachedThreadPool();
+	boolean running = false;
+	QueueScheduler scheduler = new QueueScheduler();
 
 	/**
 	 * 
@@ -27,6 +35,11 @@ final public class ChatWebSocketHandler {
 	 */
 	@OnWebSocketConnect
 	public void onConnect(Session user) {
+		if (!running) {
+          new Thread(scheduler).start();
+          running = true;
+		}
+
 		String name = user.getUpgradeRequest().getParameterMap().get("name").get(0);
 		if (name != null) {
 			if (userUsernameMap.containsValue(name)) {
@@ -95,9 +108,9 @@ final public class ChatWebSocketHandler {
 	 * @param type
 	 */
 	private void broadcastMessage(String sender, String message, String type) {
-		
+
 		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
-			new Thread(() -> {
+			executor.execute(() -> {
 				try {
 					session.getRemote()
 							.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", type)
@@ -105,9 +118,43 @@ final public class ChatWebSocketHandler {
 									.put("userlist", sessions.values())));
 				} catch (Exception e) {
 					e.printStackTrace();
+					queue.offer(new PendingMessages(sender, session, message, type));
+
 				}
-			}).start();
+			});
 		});
 	}
 
+	private class QueueScheduler implements Runnable {
+		public void run() {
+			while (true) {
+				if (!queue.isEmpty()) {
+					PendingMessages m = queue.remove();
+					broadcastMessage(m.sender, m.session, m.message, m.type);
+				}
+				try {
+					Thread.sleep(50);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+
+	public void broadcastMessage(String sender, Session session, String message, String type) {
+		if (session.isOpen()) {
+			executor.execute(() -> {
+				try {
+					session.getRemote()
+							.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", type)
+									.put("timestamp", LocalDateTime.now()).put("message", message)
+									.put("userlist", sessions.values())));
+				} catch (Exception e) {
+					e.printStackTrace();
+					queue.offer(new PendingMessages(sender, session, message, type));
+
+				}
+			});
+		}
+	}
 }
