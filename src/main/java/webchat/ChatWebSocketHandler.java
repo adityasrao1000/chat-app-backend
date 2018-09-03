@@ -29,6 +29,7 @@ final public class ChatWebSocketHandler {
 	boolean running = false;
 	QueueScheduler scheduler = new QueueScheduler();
 
+	// Initialize queue scheduler thread
 	{
 		if (!running) {
 			new Thread(scheduler).start();
