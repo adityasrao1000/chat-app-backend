@@ -18,7 +18,7 @@ import com.google.gson.Gson;
  * @author Aditya
  * @since 24/8/18
  */
-@WebSocket(maxTextMessageSize = 15728640)
+@WebSocket(maxTextMessageSize = 15728640, maxBinaryMessageSize = 15728640)
 final public class ChatWebSocketHandler {
 	// this map is shared between sessions and threads, so it needs to be
 	// thread-safe
@@ -29,16 +29,19 @@ final public class ChatWebSocketHandler {
 	boolean running = false;
 	QueueScheduler scheduler = new QueueScheduler();
 
+	{
+		if (!running) {
+			new Thread(scheduler).start();
+			running = true;
+		}
+	}
+
 	/**
 	 * 
 	 * @param user
 	 */
 	@OnWebSocketConnect
 	public void onConnect(Session user) {
-		if (!running) {
-          new Thread(scheduler).start();
-          running = true;
-		}
 
 		String name = user.getUpgradeRequest().getParameterMap().get("name").get(0);
 		if (name != null) {
@@ -125,6 +128,11 @@ final public class ChatWebSocketHandler {
 		});
 	}
 
+	/**
+	 * 
+	 * @author Aditya
+	 *
+	 */
 	private class QueueScheduler implements Runnable {
 		public void run() {
 			while (true) {
@@ -141,6 +149,13 @@ final public class ChatWebSocketHandler {
 		}
 	}
 
+	/**
+	 * 
+	 * @param sender
+	 * @param session
+	 * @param message
+	 * @param type
+	 */
 	public void broadcastMessage(String sender, Session session, String message, String type) {
 		if (session.isOpen()) {
 			executor.execute(() -> {
