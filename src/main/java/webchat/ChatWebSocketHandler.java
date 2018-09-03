@@ -142,7 +142,7 @@ final public class ChatWebSocketHandler {
 					broadcastMessage(m.sender, m.session, m.message, m.type);
 				}
 				try {
-					Thread.sleep(50);
+					Thread.sleep(100);
 				} catch (InterruptedException e) {
 					e.printStackTrace();
 				}
