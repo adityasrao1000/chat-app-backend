@@ -1,10 +1,5 @@
 package webchat;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URLConnection;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HashMap;
@@ -14,6 +9,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import org.apache.tika.Tika;
 import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
 import org.json.JSONObject;
@@ -98,7 +94,7 @@ final public class ChatWebSocketHandler {
 
 	@OnWebSocketMessage
 	public void onStreamMessage(Session user, byte content[], int offset, int length) {
-		executor.execute(() -> createImage(content, user));
+		createImage(content, user);
 	}
 
 	/**
@@ -173,16 +169,17 @@ final public class ChatWebSocketHandler {
 	 * @param user
 	 */
 	private void createImage(byte[] content, Session user) {
-		try (InputStream is = new BufferedInputStream(new ByteArrayInputStream(content));) {
-			String mimeType = URLConnection.guessContentTypeFromStream(is);
-			if (mimeType != null) {
-				if (mimeType.contains("image")) {
-					String encodedBase64Image = Base64.getEncoder().encodeToString(content);
-					broadcastMessage(userUsernameMap.get(user), encodedBase64Image, "image");
-				}
-			}
-		} catch (IOException e) {
-			e.printStackTrace();
+		Tika tika = new Tika();
+		String mimeType = tika.detect(content);
+		System.out.println(mimeType);
+
+		if (mimeType != null) {
+
+			String encodedBase64Image = Base64.getEncoder().encodeToString(content);
+			broadcastMessage(userUsernameMap.get(user), encodedBase64Image, mimeType);
+
+		} else {
+			queue.offer(new PendingMessages("Server", user, "file type is not supported", "text"));
 		}
 	}
 }
