@@ -1,6 +1,12 @@
 package webchat;
 
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URLConnection;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
@@ -11,7 +17,6 @@ import java.util.concurrent.Executors;
 import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
 import org.json.JSONObject;
-import com.google.gson.Gson;
 
 /**
  * 
@@ -20,21 +25,17 @@ import com.google.gson.Gson;
  */
 @WebSocket(maxTextMessageSize = 15728640, maxBinaryMessageSize = 15728640)
 final public class ChatWebSocketHandler {
-	// this map is shared between sessions and threads, so it needs to be
-	// thread-safe
+
+	// this map is shared between sessions and threads
 	private final Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
 	private Map<Session, String> sessions = null;
 	Queue<PendingMessages> queue = new LinkedList<PendingMessages>();
 	private final Executor executor = Executors.newCachedThreadPool();
-	boolean running = false;
 	QueueScheduler scheduler = new QueueScheduler();
 
 	// Initialize queue scheduler thread
 	{
-		if (!running) {
-			new Thread(scheduler).start();
-			running = true;
-		}
+		new Thread(scheduler).start();
 	}
 
 	/**
@@ -92,16 +93,12 @@ final public class ChatWebSocketHandler {
 	 */
 	@OnWebSocketMessage
 	public void onMessage(Session user, String message) {
-		Gson gson = Singleton.gson();
-		if (userUsernameMap.containsKey(user)) {
-			try {
-				BinaryMessage type = gson.fromJson(message, BinaryMessage.class);
-				System.out.println(type.getType());
-				broadcastMessage(userUsernameMap.get(user), type.getFile(), type.getType());
-			} catch (Exception e) {
-				broadcastMessage(userUsernameMap.get(user), message, "text");
-			}
-		}
+		broadcastMessage(userUsernameMap.get(user), message, "text");
+	}
+
+	@OnWebSocketMessage
+	public void onStreamMessage(Session user, byte content[], int offset, int length) {
+		executor.execute(() -> createImage(content, user));
 	}
 
 	/**
@@ -113,17 +110,15 @@ final public class ChatWebSocketHandler {
 	 */
 	private void broadcastMessage(String sender, String message, String type) {
 
+		String content = String.valueOf(new JSONObject().put("sender", sender).put("type", type)
+				.put("timestamp", LocalDateTime.now()).put("message", message).put("userlist", sessions.values()));
 		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
 			executor.execute(() -> {
 				try {
-					session.getRemote()
-							.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", type)
-									.put("timestamp", LocalDateTime.now()).put("message", message)
-									.put("userlist", sessions.values())));
+					session.getRemote().sendString(content);
 				} catch (Exception e) {
 					e.printStackTrace();
 					queue.offer(new PendingMessages(sender, session, message, type));
-
 				}
 			});
 		});
@@ -159,18 +154,35 @@ final public class ChatWebSocketHandler {
 	 */
 	public void broadcastMessage(String sender, Session session, String message, String type) {
 		if (session.isOpen()) {
+			String content = String.valueOf(new JSONObject().put("sender", sender).put("type", type)
+					.put("timestamp", LocalDateTime.now()).put("message", message).put("userlist", sessions.values()));
 			executor.execute(() -> {
 				try {
-					session.getRemote()
-							.sendString(String.valueOf(new JSONObject().put("sender", sender).put("type", type)
-									.put("timestamp", LocalDateTime.now()).put("message", message)
-									.put("userlist", sessions.values())));
+					session.getRemote().sendString(content);
 				} catch (Exception e) {
 					e.printStackTrace();
 					queue.offer(new PendingMessages(sender, session, message, type));
-
 				}
 			});
+		}
+	}
+
+	/**
+	 * 
+	 * @param content
+	 * @param user
+	 */
+	private void createImage(byte[] content, Session user) {
+		try (InputStream is = new BufferedInputStream(new ByteArrayInputStream(content));) {
+			String mimeType = URLConnection.guessContentTypeFromStream(is);
+			if (mimeType != null) {
+				if (mimeType.contains("image")) {
+					String encodedBase64Image = Base64.getEncoder().encodeToString(content);
+					broadcastMessage(userUsernameMap.get(user), encodedBase64Image, "image");
+				}
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
 	}
 }
