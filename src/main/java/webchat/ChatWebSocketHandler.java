@@ -5,6 +5,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -92,9 +93,16 @@ final public class ChatWebSocketHandler {
 		broadcastMessage(userUsernameMap.get(user), message, "text");
 	}
 
+	/**
+	 * 
+	 * @param user
+	 * @param content
+	 * @param offset
+	 * @param length
+	 */
 	@OnWebSocketMessage
 	public void onStreamMessage(Session user, byte content[], int offset, int length) {
-		createImage(content, user);
+		createBinary(content, user);
 	}
 
 	/**
@@ -131,11 +139,11 @@ final public class ChatWebSocketHandler {
 				if (!queue.isEmpty()) {
 					PendingMessages m = queue.remove();
 					broadcastMessage(m.sender, m.session, m.message, m.type);
-				}
-				try {
-					Thread.sleep(100);
-				} catch (InterruptedException e) {
-					e.printStackTrace();
+					try {
+						Thread.sleep(100);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
 				}
 			}
 		}
@@ -148,7 +156,7 @@ final public class ChatWebSocketHandler {
 	 * @param message
 	 * @param type
 	 */
-	public void broadcastMessage(String sender, Session session, String message, String type) {
+	private void broadcastMessage(String sender, Session session, String message, String type) {
 		if (session.isOpen()) {
 			String content = String.valueOf(new JSONObject().put("sender", sender).put("type", type)
 					.put("timestamp", LocalDateTime.now()).put("message", message).put("userlist", sessions.values()));
@@ -168,15 +176,14 @@ final public class ChatWebSocketHandler {
 	 * @param content
 	 * @param user
 	 */
-	private void createImage(byte[] content, Session user) {
+	private void createBinary(byte[] content, Session user) {
 		Tika tika = new Tika();
-		String mimeType = tika.detect(content);
-		System.out.println(mimeType);
+		Optional<String> mimeType = Optional.ofNullable(tika.detect(content));
 
-		if (mimeType != null) {
+		if (mimeType.isPresent()) {
 
 			String encodedBase64Image = Base64.getEncoder().encodeToString(content);
-			broadcastMessage(userUsernameMap.get(user), encodedBase64Image, mimeType);
+			broadcastMessage(userUsernameMap.get(user), encodedBase64Image, mimeType.get());
 
 		} else {
 			queue.offer(new PendingMessages("Server", user, "file type is not supported", "text"));
