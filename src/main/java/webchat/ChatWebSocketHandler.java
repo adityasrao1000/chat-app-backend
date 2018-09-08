@@ -2,14 +2,14 @@ package webchat;
 
 import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.apache.tika.Tika;
 import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
@@ -20,19 +20,29 @@ import org.json.JSONObject;
  * @author Aditya
  * @since 24/8/18
  */
-@WebSocket(maxTextMessageSize = 15728640, maxBinaryMessageSize = 15728640)
+@WebSocket(maxTextMessageSize = 1728640, maxBinaryMessageSize = 15728640)
 final public class ChatWebSocketHandler {
 
 	// this map is shared between sessions and threads
 	private final Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
-	private Map<Session, String> sessions = null;
-	Queue<PendingMessages> queue = new LinkedList<PendingMessages>();
+	ConcurrentLinkedDeque<PendingMessages> queue = new ConcurrentLinkedDeque<PendingMessages>();
 	private final Executor executor = Executors.newCachedThreadPool();
-	QueueScheduler scheduler = new QueueScheduler();
+	final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
 	// Initialize queue scheduler thread
 	{
-		new Thread(scheduler).start();
+		scheduler.schedule(new Runnable() {
+
+			@Override
+			public void run() {
+				while (true) {
+					if (!queue.isEmpty()) {
+						PendingMessages m = queue.remove();
+						broadcastMessage(m.sender, m.session, m.message, m.type);
+					}
+				}
+			}
+		}, 100, TimeUnit.SECONDS);
 	}
 
 	/**
@@ -49,8 +59,7 @@ final public class ChatWebSocketHandler {
 			} else {
 				user.setIdleTimeout(0);
 				userUsernameMap.put(user, name);
-				sessions = new HashMap<Session, String>(userUsernameMap);
-				broadcastMessage("Server", (name + " joined the chat"), "text");
+				broadcastMessage("Server", userUsernameMap, (name + " joined the chat"), "text");
 			}
 		}
 	}
@@ -68,8 +77,7 @@ final public class ChatWebSocketHandler {
 		String username = userUsernameMap.get(user);
 		if (username != null) {
 			userUsernameMap.remove(user);
-			sessions = new HashMap<Session, String>(userUsernameMap);
-			broadcastMessage("Server", (username + " left the chat"), "text");
+			broadcastMessage("Server", userUsernameMap, (username + " left the chat"), "text");
 		}
 	}
 
@@ -90,7 +98,7 @@ final public class ChatWebSocketHandler {
 	 */
 	@OnWebSocketMessage
 	public void onMessage(Session user, String message) {
-		broadcastMessage(userUsernameMap.get(user), message, "text");
+		broadcastMessage(userUsernameMap.get(user), userUsernameMap, message, "text");
 	}
 
 	/**
@@ -112,64 +120,25 @@ final public class ChatWebSocketHandler {
 	 * @param message
 	 * @param type
 	 */
-	private void broadcastMessage(String sender, String message, String type) {
+	private void broadcastMessage(String sender, Map<Session, String> sessions, String message, String type) {
 
 		String content = String.valueOf(new JSONObject().put("sender", sender).put("type", type)
 				.put("timestamp", LocalDateTime.now()).put("message", message).put("userlist", sessions.values()));
 		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
 			executor.execute(() -> {
 				try {
-					session.getRemote().sendString(content);
+					session.getRemote().sendStringByFuture(content);
 				} catch (Exception e) {
 					e.printStackTrace();
-					queue.offer(new PendingMessages(sender, session, message, type));
+					Map<Session, String> m = new ConcurrentHashMap<Session, String>();
+					m.put(session, session.getUpgradeRequest().getParameterMap().get("name").get(0));
+					queue.offer(new PendingMessages(sender, m, message, type));
 				}
 			});
 		});
 	}
 
-	/**
-	 * 
-	 * @author Aditya
-	 *
-	 */
-	private class QueueScheduler implements Runnable {
-		public void run() {
-			while (true) {
-				if (!queue.isEmpty()) {
-					PendingMessages m = queue.remove();
-					broadcastMessage(m.sender, m.session, m.message, m.type);
-					try {
-						Thread.sleep(100);
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}
-				}
-			}
-		}
-	}
-
-	/**
-	 * 
-	 * @param sender
-	 * @param session
-	 * @param message
-	 * @param type
-	 */
-	private void broadcastMessage(String sender, Session session, String message, String type) {
-		if (session.isOpen()) {
-			String content = String.valueOf(new JSONObject().put("sender", sender).put("type", type)
-					.put("timestamp", LocalDateTime.now()).put("message", message).put("userlist", sessions.values()));
-			executor.execute(() -> {
-				try {
-					session.getRemote().sendString(content);
-				} catch (Exception e) {
-					e.printStackTrace();
-					queue.offer(new PendingMessages(sender, session, message, type));
-				}
-			});
-		}
-	}
+	
 
 	/**
 	 * 
@@ -183,10 +152,12 @@ final public class ChatWebSocketHandler {
 		if (mimeType.isPresent()) {
 
 			String encodedBase64Image = Base64.getEncoder().encodeToString(content);
-			broadcastMessage(userUsernameMap.get(user), encodedBase64Image, mimeType.get());
+			broadcastMessage(userUsernameMap.get(user), userUsernameMap, encodedBase64Image, mimeType.get());
 
 		} else {
-			queue.offer(new PendingMessages("Server", user, "file type is not supported", "text"));
+			Map<Session, String> m = new ConcurrentHashMap<Session, String>();
+			m.put(user, user.getUpgradeRequest().getParameterMap().get("name").get(0));
+			queue.offer(new PendingMessages("Server", m, "file type is not supported", "text"));
 		}
 	}
 }
