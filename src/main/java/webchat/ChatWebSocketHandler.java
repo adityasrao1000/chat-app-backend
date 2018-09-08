@@ -24,7 +24,6 @@ final public class ChatWebSocketHandler {
 	// this map is shared between sessions and threads
 	private final Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
 	private final Executor executor = Executors.newCachedThreadPool();
-	final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
 	/**
 	 * 
