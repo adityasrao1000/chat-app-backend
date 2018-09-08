@@ -7,7 +7,6 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import org.apache.tika.Tika;
 import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
@@ -18,7 +17,7 @@ import org.json.JSONObject;
  * @author Aditya
  * @since 24/8/18
  */
-@WebSocket(maxTextMessageSize = 1728640, maxBinaryMessageSize = 15728640)
+@WebSocket(maxTextMessageSize = 1000000, maxBinaryMessageSize = 15728640)
 final public class ChatWebSocketHandler {
 
 	// this map is shared between sessions and threads
@@ -116,7 +115,7 @@ final public class ChatWebSocketHandler {
 	 * @param content
 	 * @param user
 	 */
-	private void createBinary(byte[] content, Session user) {
+	protected void createBinary(byte[] content, Session user) {
 		Tika tika = new Tika();
 		Optional<String> mimeType = Optional.ofNullable(tika.detect(content));
 
