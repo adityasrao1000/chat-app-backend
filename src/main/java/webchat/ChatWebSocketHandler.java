@@ -5,11 +5,9 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import org.apache.tika.Tika;
 import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
@@ -25,25 +23,8 @@ final public class ChatWebSocketHandler {
 
 	// this map is shared between sessions and threads
 	private final Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
-	ConcurrentLinkedDeque<PendingMessages> queue = new ConcurrentLinkedDeque<PendingMessages>();
 	private final Executor executor = Executors.newCachedThreadPool();
 	final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-
-	// Initialize queue scheduler thread
-	{
-		scheduler.schedule(new Runnable() {
-
-			@Override
-			public void run() {
-				while (true) {
-					if (!queue.isEmpty()) {
-						PendingMessages m = queue.remove();
-						broadcastMessage(m.sender, m.session, m.message, m.type);
-					}
-				}
-			}
-		}, 100, TimeUnit.SECONDS);
-	}
 
 	/**
 	 * 
@@ -126,19 +107,10 @@ final public class ChatWebSocketHandler {
 				.put("timestamp", LocalDateTime.now()).put("message", message).put("userlist", sessions.values()));
 		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
 			executor.execute(() -> {
-				try {
-					session.getRemote().sendStringByFuture(content);
-				} catch (Exception e) {
-					e.printStackTrace();
-					Map<Session, String> m = new ConcurrentHashMap<Session, String>();
-					m.put(session, session.getUpgradeRequest().getParameterMap().get("name").get(0));
-					queue.offer(new PendingMessages(sender, m, message, type));
-				}
+				session.getRemote().sendStringByFuture(content);
 			});
 		});
 	}
-
-	
 
 	/**
 	 * 
@@ -150,14 +122,12 @@ final public class ChatWebSocketHandler {
 		Optional<String> mimeType = Optional.ofNullable(tika.detect(content));
 
 		if (mimeType.isPresent()) {
-
 			String encodedBase64Image = Base64.getEncoder().encodeToString(content);
 			broadcastMessage(userUsernameMap.get(user), userUsernameMap, encodedBase64Image, mimeType.get());
-
 		} else {
-			Map<Session, String> m = new ConcurrentHashMap<Session, String>();
-			m.put(user, user.getUpgradeRequest().getParameterMap().get("name").get(0));
-			queue.offer(new PendingMessages("Server", m, "file type is not supported", "text"));
+			Map<Session, String> map = new ConcurrentHashMap<Session, String>();
+			map.put(user, user.getUpgradeRequest().getParameterMap().get("name").get(0));
+			broadcastMessage("Server", map, "file type is not supported", "text");
 		}
 	}
 }
