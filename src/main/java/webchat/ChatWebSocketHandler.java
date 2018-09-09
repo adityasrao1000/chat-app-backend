@@ -23,7 +23,11 @@ final public class ChatWebSocketHandler {
 	// this map is shared between sessions and threads
 	private final Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
 	private final Executor executor = Executors.newCachedThreadPool();
+	private final Tika tika = new Tika();
 
+	{
+		System.out.println("class initialized");
+	}
 	/**
 	 * 
 	 * @param user
@@ -116,7 +120,6 @@ final public class ChatWebSocketHandler {
 	 * @param user
 	 */
 	protected void createBinary(byte[] content, Session user) {
-		Tika tika = new Tika();
 		Optional<String> mimeType = Optional.ofNullable(tika.detect(content));
 
 		if (mimeType.isPresent()) {
