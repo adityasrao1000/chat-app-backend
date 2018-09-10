@@ -25,9 +25,6 @@ final public class ChatWebSocketHandler {
 	private final Executor executor = Executors.newCachedThreadPool();
 	private final Tika tika = new Tika();
 
-	{
-		System.out.println("class initialized");
-	}
 	/**
 	 * 
 	 * @param user
