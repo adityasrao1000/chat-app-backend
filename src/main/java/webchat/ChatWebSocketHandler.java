@@ -1,16 +1,24 @@
 package webchat;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import org.apache.tika.Tika;
+import org.apache.tika.config.TikaConfig;
+import org.apache.tika.metadata.Metadata;
+import org.apache.tika.mime.MediaType;
+import org.apache.tika.mime.MimeType;
+import org.apache.tika.mime.MimeTypeException;
 import org.eclipse.jetty.websocket.api.*;
 import org.eclipse.jetty.websocket.api.annotations.*;
 import org.json.JSONObject;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 /**
  * 
@@ -22,8 +30,11 @@ final public class ChatWebSocketHandler {
 
 	// this map is shared between sessions and threads
 	private final Map<Session, String> userUsernameMap = new ConcurrentHashMap<>();
-	private final Executor executor = Executors.newCachedThreadPool();
+	private final Map<Session, String> emptyMap = new ConcurrentHashMap<>();
 	private final Tika tika = new Tika();
+
+	private final ApplicationContext context = new ClassPathXmlApplicationContext("spring-jdbc.xml");
+	private final ChatUserJDBCTemplate imageJDBCTemplate = (ChatUserJDBCTemplate) context.getBean("ImageJDBCTemplate");
 
 	/**
 	 * 
@@ -32,15 +43,25 @@ final public class ChatWebSocketHandler {
 	@OnWebSocketConnect
 	public void onConnect(Session user) {
 
-		String name = user.getUpgradeRequest().getParameterMap().get("name").get(0);
+		String username = user.getUpgradeRequest().getParameterMap().get("username").get(0);
+		String password = user.getUpgradeRequest().getParameterMap().get("password").get(0);
+		List<UserDetails> result = imageJDBCTemplate.isAuthenticated(username, password);
+
+		String name = null;
+		if (result.size() > 0) {
+			name = result.get(0).getUsername();
+		}
+
 		if (name != null) {
-			if (userUsernameMap.containsValue(name)) {
-				user.close();
-			} else {
+			if (!userUsernameMap.containsValue(name)) {
 				user.setIdleTimeout(0);
 				userUsernameMap.put(user, name);
-				broadcastMessage("Server", userUsernameMap, (name + " joined the chat"), "text");
+				broadcastMessage("Server", userUsernameMap, (name + " joined the chat"), "text", userUsernameMap);
 			}
+		} else {
+			final Map<Session, String> userMap = new ConcurrentHashMap<>();
+			userMap.put(user, "");
+			broadcastMessage("Server", userMap, "You are not allowed to join this chat", "text", emptyMap);
 		}
 	}
 
@@ -57,7 +78,7 @@ final public class ChatWebSocketHandler {
 		String username = userUsernameMap.get(user);
 		if (username != null) {
 			userUsernameMap.remove(user);
-			broadcastMessage("Server", userUsernameMap, (username + " left the chat"), "text");
+			broadcastMessage("Server", userUsernameMap, (username + " left the chat"), "text", userUsernameMap);
 		}
 	}
 
@@ -78,7 +99,11 @@ final public class ChatWebSocketHandler {
 	 */
 	@OnWebSocketMessage
 	public void onMessage(Session user, String message) {
-		broadcastMessage(userUsernameMap.get(user), userUsernameMap, message, "text");
+		if (userUsernameMap.containsKey(user)) {
+			broadcastMessage(userUsernameMap.get(user), userUsernameMap, message, "text", userUsernameMap);
+		} else {
+			user.close();
+		}
 	}
 
 	/**
@@ -90,7 +115,11 @@ final public class ChatWebSocketHandler {
 	 */
 	@OnWebSocketMessage
 	public void onStreamMessage(Session user, byte content[], int offset, int length) {
-		createBinary(content, user);
+		if (userUsernameMap.containsKey(user)) {
+			createBinary(content, user);
+		} else {
+			user.close();
+		}
 	}
 
 	/**
@@ -100,14 +129,13 @@ final public class ChatWebSocketHandler {
 	 * @param message
 	 * @param type
 	 */
-	private void broadcastMessage(String sender, Map<Session, String> sessions, String message, String type) {
+	private void broadcastMessage(String sender, Map<Session, String> sessions, String message, String type,
+			Map<Session, String> userlist) {
 
 		String content = String.valueOf(new JSONObject().put("sender", sender).put("type", type)
-				.put("timestamp", LocalDateTime.now()).put("message", message).put("userlist", sessions.values()));
-		userUsernameMap.keySet().stream().filter(Session::isOpen).forEach(session -> {
-			executor.execute(() -> {
-				session.getRemote().sendStringByFuture(content);
-			});
+				.put("timestamp", LocalDateTime.now()).put("message", message).put("userlist", userlist.values()));
+		sessions.keySet().stream().filter(Session::isOpen).forEach(session -> {
+			session.getRemote().sendStringByFuture(content);
 		});
 	}
 
@@ -118,14 +146,15 @@ final public class ChatWebSocketHandler {
 	 */
 	protected void createBinary(byte[] content, Session user) {
 		Optional<String> mimeType = Optional.ofNullable(tika.detect(content));
-
+		
 		if (mimeType.isPresent()) {
 			String encodedBase64Image = Base64.getEncoder().encodeToString(content);
-			broadcastMessage(userUsernameMap.get(user), userUsernameMap, encodedBase64Image, mimeType.get());
+			broadcastMessage(userUsernameMap.get(user), userUsernameMap, encodedBase64Image, mimeType.get(),
+					userUsernameMap);
 		} else {
 			Map<Session, String> map = new ConcurrentHashMap<Session, String>();
 			map.put(user, user.getUpgradeRequest().getParameterMap().get("name").get(0));
-			broadcastMessage("Server", map, "file type is not supported", "text");
+			broadcastMessage("Server", map, "file type is not supported", "text", userUsernameMap);
 		}
 	}
 }
