@@ -46,7 +46,11 @@ final public class ChatWebSocketHandler {
 		}
 
 		if (name != null) {
-			if (!userUsernameMap.containsValue(name)) {
+			if (userUsernameMap.containsValue(name)) {
+				Map<Session, String> map = new ConcurrentHashMap<Session, String>();
+				map.put(user, "");
+				broadcastMessage("Server", map, "This username is already in use, please use a different one", "text", emptyMap);
+			} else {
 				user.setIdleTimeout(0);
 				userUsernameMap.put(user, name);
 				broadcastMessage("Server", userUsernameMap, (name + " joined the chat"), "text", userUsernameMap);
@@ -137,7 +141,7 @@ final public class ChatWebSocketHandler {
 	 * @param content
 	 * @param user
 	 */
-	protected void createBinary(byte[] content, Session user) {
+	private void createBinary(byte[] content, Session user) {
 		Optional<String> mimeType = Optional.ofNullable(tika.detect(content));
 		
 		if (mimeType.isPresent()) {
